@@ -46,7 +46,7 @@ La aplicación analiza automáticamente comentarios y proporciona:
 1. **Clona el repositorio**:
 
    ```bash
-   git clone https://github.com/tu-usuario/social-media-analyzer.git
+   git clone https://github.com/jgarciarf2/social-media-analyzer.git
    cd social-media-analyzer
    ```
 
@@ -144,12 +144,28 @@ npm run lint     # Linter ESLint
 
 ## ⚠️ Limitaciones Actuales
 
-**Este es un prototipo** que utiliza comentarios simulados para demostrar la funcionalidad. Para una versión completa, necesitarías:
+**Este es un prototipo educativo** que utiliza comentarios simulados para demostrar la funcionalidad de análisis de sentimientos.
+
+### 🚫 Por qué no extrae comentarios reales:
+
+1. **APIs Oficiales Restringidas**: Instagram/Facebook requieren autenticación OAuth y permisos especiales
+2. **Términos de Servicio**: Las redes sociales prohíben el web scraping automatizado
+3. **Medidas Anti-Bot**: Sistemas avanzados que bloquean la extracción automatizada
+4. **Costos y Complejidad**: Las APIs oficiales tienen costos y requisitos empresariales
+
+### 🔧 Para una versión completa necesitarías:
 
 1. **APIs oficiales** de cada plataforma de red social
 2. **Autenticación OAuth** para acceder a contenido
-3. **Web scraping legal** respetando términos de servicio
-4. **Procesamiento de grandes volúmenes** de datos
+3. **Permisos empresariales** para desarrollo de aplicaciones
+4. **Infraestructura robusta** para procesamiento de grandes volúmenes
+
+### 💡 Lo que SÍ hace este prototipo:
+
+- ✅ **Demostrar** la integración con Gemini AI
+- ✅ **Mostrar** análisis de sentimientos reales
+- ✅ **Simular** el flujo completo de la aplicación
+- ✅ **Enseñar** las tecnologías modernas de desarrollo web
 
 ## 🤝 Contribuir
 
@@ -175,10 +191,9 @@ Este proyecto está bajo la Licencia MIT. Ver `LICENSE` para más detalles.
 
 ## 📞 Contacto
 
-- **Desarrollador**: Tu Nombre
-- **Email**: tu.email@ejemplo.com
-- **LinkedIn**: [tu-perfil](https://linkedin.com/in/tu-perfil)
-- **GitHub**: [tu-usuario](https://github.com/tu-usuario)
+- **Desarrollador**: jgarciarf2
+- **Email**: jgarciarf216@gmail.com
+- **GitHub**: [jgarciarf2](https://github.com/jgarciarf2)
 
 ---
 

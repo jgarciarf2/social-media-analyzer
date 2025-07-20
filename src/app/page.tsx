@@ -115,6 +115,21 @@ export default function Home() {
             </div>
           </div>
           
+          {/* Nota del Prototipo */}
+          <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm">
+                <p className="text-amber-800 font-medium mb-1">Nota del Prototipo</p>
+                <p className="text-amber-700">
+                  Esta aplicación utiliza <strong>comentarios simulados</strong> para demostrar el análisis de sentimientos. 
+                  Los comentarios no son extraídos del post real debido a las limitaciones de las APIs de redes sociales. 
+                  Gemini AI analiza estos comentarios de ejemplo para mostrar la funcionalidad.
+                </p>
+              </div>
+            </div>
+          </div>
+          
           {error && (
             <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
               <AlertCircle size={18} />
