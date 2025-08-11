@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
+import { extractCommentsFromUrl } from "@/utils/scraper";
+import { getInstagramComments } from "@/utils/scraper";
 
 // Inicializar Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
@@ -34,11 +36,30 @@ export async function POST(request: NextRequest) {
       process.env.GEMINI_API_KEY ? "Sí" : "No"
     );
 
-    // Simular datos para el prototipo
-    // En una versión completa, aquí extraerías los comentarios reales de la URL
-    const mockComments = generateRealisticComments(url);
-    console.log("📝 Comentarios simulados para:", url);
-    console.log("📝 Número de comentarios:", mockComments.length);
+    // Intentar extraer comentarios reales primero
+    let comments: string[] = [];
+    try {
+      console.log("🕷️ Intentando extraer comentarios reales...");
+      if (url.includes("instagram.com")) {
+        // Usar el método avanzado para Instagram
+        const instaComments = await getInstagramComments(url);
+        comments = instaComments.map((c) => c.text);
+        console.log("✅ Comentarios reales extraídos (IG):", comments.length);
+      } else {
+        // Otros: método genérico
+        const scrapedComments = await extractCommentsFromUrl(url);
+        comments = scrapedComments.map((c) => c.text);
+        console.log("✅ Comentarios reales extraídos:", comments.length);
+      }
+      if (comments.length === 0) {
+        throw new Error("No se encontraron comentarios");
+      }
+    } catch (scrapingError) {
+      console.log("⚠️ Scraping falló, usando comentarios simulados");
+      console.error("Error de scraping:", scrapingError);
+      // Fallback a comentarios simulados
+      comments = generateRealisticComments(url);
+    }
 
     // Prompt para Gemini AI
     const prompt = `
@@ -46,7 +67,7 @@ export async function POST(request: NextRequest) {
     Proporciona un análisis estadístico y un resumen.
 
     Comentarios:
-    ${mockComments.join("\n")}
+    ${comments.join("\n")}
 
     Por favor responde en formato JSON con esta estructura exacta:
     {
@@ -83,7 +104,7 @@ export async function POST(request: NextRequest) {
     } catch (parseError) {
       console.error("❌ Error parseando JSON:", parseError);
       // Fallback: crear análisis basado en respuesta de texto
-      analysis = createFallbackAnalysis(mockComments, text);
+      analysis = createFallbackAnalysis(comments, text);
       console.log("🔄 Usando análisis fallback:", analysis);
     }
 
@@ -169,7 +190,7 @@ function generateRealisticComments(url: string): string[] {
   return shuffled.slice(0, numComments);
 }
 
-// Generar comentarios de ejemplo para el prototipo (función legacy)
+// Generar comentarios de ejemplo para el prototipo
 function generateMockComments(): string[] {
   const positiveComments = [
     "¡Me encanta esta publicación! 😍",

@@ -12,9 +12,10 @@ Una aplicación web moderna que utiliza **Gemini AI** para analizar sentimientos
 - 📱 **Análisis Multi-Plataforma**: Soporta Instagram, Facebook y otras redes sociales
 - 🧠 **IA Avanzada**: Utiliza Gemini AI para análisis de sentimientos precisos
 - 📊 **Dashboard Visual**: Gráficos interactivos con estadísticas detalladas
-- ⚡ **Tiempo Real**: Análisis rápido y eficiente
+- ⚡ **Scraping Real**: Extrae comentarios reales (modo prototipo con simulación)
 - 🎨 **Interfaz Moderna**: Diseño responsivo con Tailwind CSS
 - 🔒 **Seguro**: API keys protegidas en el backend
+- 🛡️ **Sistema de Fallbacks**: Múltiples niveles de recuperación ante errores
 
 ## 🚀 Demo
 
@@ -33,6 +34,8 @@ La aplicación analiza automáticamente comentarios y proporciona:
 - **Iconos**: Lucide React
 - **IA**: Google Gemini AI
 - **Backend**: Next.js API Routes
+- **Scraping**: Puppeteer (para extracción real de comentarios)
+- **Database**: File-based caching (escalable a PostgreSQL/MongoDB)
 
 ## 📦 Instalación
 

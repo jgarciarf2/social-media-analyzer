@@ -116,7 +116,7 @@ export default function Home() {
           </div>
           
           {/* Nota del Prototipo */}
-          <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          {/* <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
             <div className="flex items-start gap-2">
               <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
               <div className="text-sm">
@@ -128,7 +128,7 @@ export default function Home() {
                 </p>
               </div>
             </div>
-          </div>
+          </div> */}
           
           {error && (
             <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
@@ -313,7 +313,7 @@ export default function Home() {
               © 2025 Social Media Analyzer
             </p>
             <p className="text-sm text-gray-500">
-              Powered by ArfDev
+              Powered by jgarciarf2
             </p>
           </div>
         </div>
