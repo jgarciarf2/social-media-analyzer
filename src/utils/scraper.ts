@@ -8,78 +8,387 @@ import puppeteer from "puppeteer";
 export async function getInstagramComments(
   postUrl: string
 ): Promise<Array<{ user: string; text: string }>> {
-  const browser = await puppeteer.launch({ headless: true });
+  const browser = await puppeteer.launch({
+    headless: false, // Cambiar a false para debug
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-web-security",
+      "--disable-features=VizDisplayCompositor",
+    ],
+  });
   const page = await browser.newPage();
   const comments: Array<{ user: string; text: string }> = [];
   let jsonCommentsFound = false;
+
   try {
-    // Interceptar las respuestas de la red
+    // Configurar headers realistas ANTES de configurar interceptor
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    );
+    await page.setViewport({ width: 1920, height: 1080 });
+
+    // Configurar cookies/headers extras
+    await page.setExtraHTTPHeaders({
+      "Accept-Language": "en-US,en;q=0.9",
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    });
+
+    console.log("🔧 Configurando interceptor de red...");
+
+    // Interceptar las respuestas de la red ANTES de navegar
     page.on("response", async (response) => {
       const url = response.url();
-      // Instagram usa esta ruta para los comentarios
-      if (url.includes("/comments/")) {
+      console.log(`📡 Interceptada URL: ${url.substring(0, 100)}...`);
+
+      // Interceptar específicamente la respuesta HTML del post de Instagram
+      if (
+        url === postUrl ||
+        (url.includes("instagram.com/p/") && !url.includes("?"))
+      ) {
+        console.log(`🎯 Interceptando página principal del post: ${url}`);
+
         try {
-          const json = await response.json();
-          if (json && json.data && json.data.comment_count) {
-            const edges = json.data.comments.edges || [];
-            for (const edge of edges) {
-              comments.push({
-                user: edge.node.owner.username,
-                text: edge.node.text,
-              });
+          const responseText = await response.text();
+          console.log(`📄 HTML tamaño: ${responseText.length} chars`);
+
+          // Buscar todos los JSON embebidos en el HTML
+          const scriptMatches = responseText.match(
+            /<script[^>]*type="application\/json"[^>]*>[\s\S]*?<\/script>/g
+          );
+
+          if (scriptMatches) {
+            console.log(
+              `📋 Encontrados ${scriptMatches.length} scripts JSON en HTML`
+            );
+
+            for (const scriptMatch of scriptMatches) {
+              const jsonContent = scriptMatch
+                .replace(/<script[^>]*>/, "")
+                .replace(/<\/script>/, "")
+                .trim();
+
+              if (
+                jsonContent.includes('"require"') &&
+                jsonContent.includes('"text"')
+              ) {
+                console.log(
+                  "🎯 Encontrado JSON con require y comentarios en HTML"
+                );
+
+                try {
+                  const jsonData = JSON.parse(jsonContent);
+                  const foundComments = findCommentsRecursively(jsonData);
+
+                  if (foundComments.length > 0) {
+                    console.log(
+                      `📊 Encontrados ${foundComments.length} comentarios en JSON embebido`
+                    );
+                    comments.push(...foundComments);
+                    jsonCommentsFound = true;
+                  }
+                } catch (e) {
+                  console.log("❌ Error parseando JSON embebido:", e);
+                }
+              }
             }
-            if (edges.length > 0) jsonCommentsFound = true;
           }
         } catch (e) {
-          // Ignorar errores de parseo
+          console.log(`❌ Error procesando HTML: ${e}`);
+        }
+      }
+
+      // Solo procesar URLs que pueden contener comentarios o cualquier respuesta grande de Instagram
+      const shouldProcess =
+        url.includes("/comments") ||
+        url.includes("PolarisPostComments") ||
+        url.includes("comment") ||
+        url.includes("graphql") ||
+        url.includes("/api/");
+
+      if (shouldProcess) {
+        console.log(
+          `🎯 URL candidata para comentarios: ${url.substring(0, 150)}...`
+        );
+
+        try {
+          const responseText = await response.text();
+          console.log(`📄 Respuesta tamaño: ${responseText.length} chars`);
+
+          // Buscar CUALQUIER respuesta que contenga "require" y comentarios
+          if (
+            responseText.includes('"require"') &&
+            responseText.includes('"text"')
+          ) {
+            console.log(
+              "🎯 Interceptada respuesta con estructura 'require' y comentarios"
+            );
+
+            try {
+              const jsonData = JSON.parse(responseText);
+              console.log(
+                "🔍 Estructura del JSON con require:",
+                Object.keys(jsonData)
+              );
+
+              // Usar la función recursiva
+              const foundComments = findCommentsRecursively(jsonData);
+              if (foundComments.length > 0) {
+                console.log(
+                  `📊 Encontrados ${foundComments.length} comentarios en estructura require`
+                );
+                comments.push(...foundComments);
+                jsonCommentsFound = true;
+              }
+            } catch (e) {
+              console.log("❌ Error parseando JSON con require:", e);
+            }
+          }
+
+          // Buscar el patrón específico de comentarios de Instagram
+          else if (
+            responseText.includes(
+              "xdt_api__v1__media__media_id__comments__connection"
+            )
+          ) {
+            console.log(
+              "🎯 Interceptada respuesta con comentarios de Instagram"
+            );
+
+            try {
+              // Parsear el JSON complejo
+              const jsonData = JSON.parse(responseText);
+
+              // Navegar por la estructura anidada para encontrar los comentarios
+              if (jsonData.require) {
+                for (const requireItem of jsonData.require) {
+                  if (requireItem[1] === "handle" && requireItem[3]) {
+                    for (const handleItem of requireItem[3]) {
+                      if (handleItem.__bbox?.require) {
+                        for (const bboxRequire of handleItem.__bbox.require) {
+                          if (bboxRequire[1] === "next" && bboxRequire[3]) {
+                            for (const nextItem of bboxRequire[3]) {
+                              const result = nextItem[1]?.__bbox?.result?.data;
+                              const commentsConnection =
+                                result?.xdt_api__v1__media__media_id__comments__connection;
+
+                              if (commentsConnection?.edges) {
+                                console.log(
+                                  `📊 Encontrados ${commentsConnection.edges.length} comentarios en JSON`
+                                );
+
+                                for (const edge of commentsConnection.edges) {
+                                  if (
+                                    edge.node?.text &&
+                                    edge.node?.user?.username
+                                  ) {
+                                    console.log(
+                                      `👤 @${edge.node.user.username}: ${edge.node.text}`
+                                    );
+                                    comments.push({
+                                      user: edge.node.user.username,
+                                      text: edge.node.text,
+                                    });
+                                  }
+                                }
+
+                                if (commentsConnection.edges.length > 0) {
+                                  jsonCommentsFound = true;
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (e) {
+              console.log(
+                "❌ Error parseando JSON con comentarios específicos:",
+                e
+              );
+            }
+          } else if (
+            responseText.includes("comments") ||
+            responseText.includes("comment")
+          ) {
+            console.log(
+              "🔍 Respuesta contiene 'comments' pero no la estructura esperada"
+            );
+
+            // Debug: Mostrar estructura alternativa de comentarios
+            if (responseText.length > 50000) {
+              console.log("📋 Analizando respuesta grande para comentarios...");
+
+              // Buscar patrones alternativos
+              if (
+                responseText.includes('"edges"') &&
+                responseText.includes('"text"')
+              ) {
+                console.log("🎯 Encontrados edges y text en respuesta");
+
+                try {
+                  const jsonData = JSON.parse(responseText);
+                  console.log("🔍 Estructura del JSON:", Object.keys(jsonData));
+
+                  // Debug: explorar la estructura 'data'
+                  if (jsonData.data) {
+                    console.log("📋 Keys en data:", Object.keys(jsonData.data));
+
+                    // Buscar cualquier campo que contenga 'comment'
+                    for (const [key, value] of Object.entries(jsonData.data)) {
+                      if (key.includes("comment") || key.includes("media")) {
+                        console.log(`🔍 Campo ${key}:`, typeof value);
+                        if (typeof value === "object" && value !== null) {
+                          console.log(`📋 Keys en ${key}:`, Object.keys(value));
+                        }
+                      }
+                    }
+                  }
+
+                  // Buscar recursivamente comentarios
+                  const foundComments = findCommentsRecursively(jsonData);
+                  if (foundComments.length > 0) {
+                    console.log(
+                      `📊 Encontrados ${foundComments.length} comentarios por búsqueda recursiva`
+                    );
+                    comments.push(...foundComments);
+                    jsonCommentsFound = true;
+                  }
+                } catch (e) {
+                  console.log("❌ Error parseando JSON alternativo:", e);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.log(`❌ Error procesando respuesta: ${e}`);
         }
       }
     });
 
+    console.log("🌐 Navegando a Instagram...");
     await page.goto(postUrl, { waitUntil: "networkidle2", timeout: 60000 }); // 60s timeout
-    // Esperar unos segundos para asegurar que cargan los comentarios
-    await new Promise((res) => setTimeout(res, 4000));
 
-    // Fallback: si no se encontraron comentarios por JSON, intentar extraer del DOM
-    if (!jsonCommentsFound) {
-      const domComments = await page.evaluate(() => {
-        // Busca spans que parezcan comentarios (excluye UI)
-        const elements = Array.from(
-          document.querySelectorAll(
-            'ul ul span, ul li span, div[role="button"] span[dir="auto"], span[dir="auto"]'
-          )
-        );
-        const texts = elements
-          .map((el) => el.textContent?.trim())
-          .filter(
-            (text): text is string =>
-              !!text &&
-              text.length > 3 &&
-              text.length < 500 &&
-              !text.includes("Ver traducción") &&
-              !text.includes("Responder") &&
-              !text.includes("Me gusta") &&
-              !text.includes("Seguir") &&
-              !text.includes("•") &&
-              !text.match(/^\d+\s*(h|d|w|min|hora|día|semana)/) &&
-              !text.match(/^\d+$/) &&
-              text !== "..." &&
-              text !== "Ver más"
-          );
-        // Quitar duplicados
-        return Array.from(new Set(texts))
-          .slice(0, 20)
-          .map((text) => ({ user: "", text }));
-      });
-      comments.push(...domComments);
-    }
+    console.log("⏳ Esperando carga de comentarios...");
+    // Esperar más tiempo para asegurar que cargan los comentarios
+    await new Promise((res) => setTimeout(res, 8000));
+
+    // NO hacer fallback al DOM - solo usar JSON interceptado
   } finally {
     await browser.close();
   }
+
+  // DEDUPLICACIÓN: Eliminar comentarios duplicados usando Map
+  const uniqueComments = new Map<string, { user: string; text: string }>();
+  for (const comment of comments) {
+    const key = `${comment.user}:${comment.text}`;
+    uniqueComments.set(key, comment);
+  }
+
+  const finalComments = Array.from(uniqueComments.values());
+
+  if (jsonCommentsFound) {
+    console.log(
+      `🟢 Comentarios extraídos desde JSON: ${finalComments.length} únicos (de ${comments.length} totales)`
+    );
+  } else {
+    console.log(`⚠️ No se encontraron comentarios en JSON interceptado`);
+  }
+  return finalComments;
+}
+
+// Función auxiliar para buscar comentarios recursivamente en cualquier estructura
+function findCommentsRecursively(
+  obj: any
+): Array<{ user: string; text: string }> {
+  const comments: Array<{ user: string; text: string }> = [];
+
+  function searchRecursively(current: any, path: string = "") {
+    if (typeof current !== "object" || current === null) return;
+
+    // Búsqueda específica para la estructura de Instagram
+    if (current.require && Array.isArray(current.require)) {
+      for (const requireItem of current.require) {
+        if (
+          Array.isArray(requireItem) &&
+          requireItem[1] === "handle" &&
+          requireItem[3]
+        ) {
+          for (const handleItem of requireItem[3]) {
+            if (handleItem.__bbox?.require) {
+              for (const bboxRequire of handleItem.__bbox.require) {
+                if (
+                  Array.isArray(bboxRequire) &&
+                  bboxRequire[1] === "next" &&
+                  bboxRequire[3]
+                ) {
+                  for (const nextItem of bboxRequire[3]) {
+                    if (nextItem[1]?.__bbox?.result?.data) {
+                      const data = nextItem[1].__bbox.result.data;
+                      const commentsConnection =
+                        data.xdt_api__v1__media__media_id__comments__connection;
+
+                      if (
+                        commentsConnection?.edges &&
+                        Array.isArray(commentsConnection.edges)
+                      ) {
+                        console.log(
+                          `🎯 Encontrados ${commentsConnection.edges.length} comentarios en estructura específica`
+                        );
+
+                        for (const edge of commentsConnection.edges) {
+                          if (edge.node?.text && edge.node?.user?.username) {
+                            console.log(
+                              `👤 @${edge.node.user.username}: ${edge.node.text}`
+                            );
+                            comments.push({
+                              user: edge.node.user.username,
+                              text: edge.node.text,
+                            });
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Búsqueda genérica para otros casos
+    if (Array.isArray(current)) {
+      for (const item of current) {
+        if (item?.node?.text && item?.node?.user?.username) {
+          console.log(`👤 @${item.node.user.username}: ${item.node.text}`);
+          comments.push({
+            user: item.node.user.username,
+            text: item.node.text,
+          });
+        }
+        searchRecursively(item, path + "[array]");
+      }
+    }
+
+    // Si es un objeto, buscar en sus propiedades
+    if (typeof current === "object") {
+      for (const [key, value] of Object.entries(current)) {
+        searchRecursively(value, path + "." + key);
+      }
+    }
+  }
+
+  searchRecursively(obj);
   return comments;
 }
-// utils/scraper.ts
 
+// Interfaces adicionales para compatibilidad
 export interface ScrapedComment {
   text: string;
   author?: string;
@@ -87,17 +396,27 @@ export interface ScrapedComment {
   timestamp?: string;
 }
 
+/**
+ * Función unificada para extraer comentarios de diferentes redes sociales
+ * @param url URL del post de la red social
+ * @returns Array de comentarios extraídos
+ */
 export async function extractCommentsFromUrl(
   url: string
 ): Promise<ScrapedComment[]> {
   try {
     // Detectar tipo de red social
     if (url.includes("instagram.com")) {
-      return await scrapeInstagram(url);
+      const instagramComments = await getInstagramComments(url);
+      // Convertir formato para compatibilidad
+      return instagramComments.map((comment) => ({
+        text: comment.text,
+        author: comment.user,
+      }));
     } else if (url.includes("facebook.com")) {
-      return await scrapeFacebook(url);
+      throw new Error("Facebook scraping requires login - use mock data");
     } else if (url.includes("twitter.com") || url.includes("x.com")) {
-      return await scrapeTwitter(url);
+      throw new Error("Twitter scraping blocked - use mock data");
     }
 
     throw new Error("Red social no soportada");
@@ -108,239 +427,9 @@ export async function extractCommentsFromUrl(
   }
 }
 
-async function scrapeInstagram(url: string): Promise<ScrapedComment[]> {
-  console.log("🕷️ Iniciando scraping de Instagram para:", url);
-
-  // Detectar si es un post específico o un perfil
-  const isPost = url.includes("/p/");
-  const isReel = url.includes("/reel/");
-  console.log(
-    `📍 Tipo de URL: ${isPost ? "Post" : isReel ? "Reel" : "Perfil"}`
-  );
-
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-accelerated-2d-canvas",
-      "--no-first-run",
-      "--no-zygote",
-      "--disable-gpu",
-    ],
-  });
-
-  try {
-    const page = await browser.newPage();
-
-    // Configurar para parecer un navegador real
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    );
-
-    // Configurar viewport
-    await page.setViewport({ width: 1366, height: 768 });
-
-    console.log("📡 Navegando a la URL...");
-    await page.goto(url, {
-      waitUntil: "networkidle2",
-      timeout: 30000,
-    });
-
-    console.log("⏳ Esperando que cargue el contenido...");
-    // Esperar a que la página cargue completamente
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-
-    // Si es un post específico, buscar comentarios
-    if (isPost || isReel) {
-      console.log("🔍 Buscando comentarios en post específico...");
-
-      // Intentar hacer clic en "Ver más comentarios" si existe
-      try {
-        const showMoreButton = await page.$(
-          'button:has-text("Ver más comentarios"), button:has-text("View more comments")'
-        );
-        if (showMoreButton) {
-          await showMoreButton.click();
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-        }
-      } catch (e) {
-        console.log("No hay botón de 'ver más' o error:", e);
-      }
-
-      // Scroll para cargar más comentarios
-      try {
-        await page.evaluate(() => {
-          const commentSection = document.querySelector(
-            'article, [role="main"]'
-          );
-          if (commentSection) {
-            commentSection.scrollTo(0, commentSection.scrollHeight);
-          }
-        });
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      } catch (e) {
-        console.log("Error en scroll:", e);
-      }
-    }
-
-    // Extraer comentarios con selectores más específicos
-    const comments = await page.evaluate((isPostOrReel) => {
-      let allComments: string[] = [];
-
-      if (isPostOrReel) {
-        // Selectores específicos para posts/reels
-        const postSelectors = [
-          // Comentarios principales
-          'div[role="button"] span[dir="auto"]',
-          'ul li div span[dir="auto"]',
-          "article section div span",
-          // Selectores más específicos para comentarios
-          "div._a9zs span",
-          "div._a9zu span",
-          "span._aacl._aaco._aacu._aacx._aad7._aade",
-          // Fallback genéricos
-          'span[dir="auto"]',
-          'div[dir="auto"]',
-        ];
-
-        console.log("🎯 Usando selectores de POST");
-
-        for (const selector of postSelectors) {
-          try {
-            const elements = document.querySelectorAll(selector);
-            console.log(
-              `Selector ${selector}: encontrados ${elements.length} elementos`
-            );
-
-            const texts = Array.from(elements)
-              .map((el) => el.textContent?.trim())
-              .filter(
-                (text): text is string =>
-                  typeof text === "string" &&
-                  text.length > 3 &&
-                  text.length < 500 &&
-                  // Filtrar elementos de UI
-                  !text.includes("Ver traducción") &&
-                  !text.includes("Responder") &&
-                  !text.includes("Me gusta") &&
-                  !text.includes("Seguir") &&
-                  !text.includes("•") &&
-                  !text.match(/^\d+\s*(h|d|w|min|hora|día|semana)/) && // Timestamps
-                  !text.match(/^\d+$/) && // Solo números
-                  text !== "..." &&
-                  text !== "Ver más"
-              );
-
-            allComments.push(...texts);
-
-            if (allComments.length > 0) {
-              console.log(
-                `✅ Encontrados ${texts.length} comentarios con selector: ${selector}`
-              );
-            }
-          } catch (e) {
-            console.log(`Error con selector ${selector}:`, e);
-          }
-        }
-      } else {
-        // Selectores para perfiles (posts del feed)
-        console.log("🏠 Usando selectores de PERFIL");
-        const profileSelectors = [
-          "article div span",
-          'div[dir="auto"] span',
-          "span._aacl._aaco._aacu._aacx._aad7._aade",
-        ];
-
-        for (const selector of profileSelectors) {
-          const elements = document.querySelectorAll(selector);
-          const texts = Array.from(elements)
-            .map((el) => el.textContent?.trim())
-            .filter(
-              (text): text is string =>
-                typeof text === "string" && text.length > 5 && text.length < 500
-            );
-          allComments.push(...texts);
-        }
-      }
-
-      // Remover duplicados y limitar
-      const uniqueComments = [...new Set(allComments)];
-      console.log(
-        `📊 Total comentarios únicos encontrados: ${uniqueComments.length}`
-      );
-
-      return uniqueComments.slice(0, 20);
-    }, isPost || isReel);
-
-    console.log("📝 Comentarios extraídos:", comments);
-    console.log("📊 Total de comentarios únicos:", comments.length);
-
-    if (comments.length === 0) {
-      console.log(
-        "⚠️ No se encontraron comentarios, intentando métodos alternativos..."
-      );
-
-      // Método alternativo: buscar en toda la página
-      const alternativeComments = await page.evaluate(() => {
-        // Buscar cualquier texto que parezca un comentario
-        const allSpans = document.querySelectorAll("span, div");
-        const potentialComments: string[] = [];
-
-        for (const element of allSpans) {
-          const text = element.textContent?.trim();
-          if (
-            text &&
-            text.length > 10 &&
-            text.length < 300 &&
-            !text.includes("Instagram") &&
-            !text.includes("Ver más") &&
-            !text.includes("Seguir") &&
-            !text.includes("Compartir") &&
-            !text.includes("Me gusta") &&
-            !text.match(/^\d+\s*(followers|following|posts)/) &&
-            text.includes(" ")
-          ) {
-            // Debe tener al menos un espacio (frase)
-            potentialComments.push(text);
-          }
-        }
-
-        return [...new Set(potentialComments)].slice(0, 5);
-      });
-
-      console.log(
-        "🔍 Comentarios alternativos encontrados:",
-        alternativeComments
-      );
-
-      if (alternativeComments.length > 0) {
-        return alternativeComments.map((text) => ({ text }));
-      }
-
-      throw new Error("No se encontraron comentarios ni texto del post");
-    }
-
-    return comments
-      .filter((text): text is string => typeof text === "string")
-      .map((text) => ({ text }));
-  } finally {
-    await browser.close();
-  }
-}
-
-async function scrapeFacebook(url: string): Promise<ScrapedComment[]> {
-  // Implementación similar para Facebook
-  // Facebook es más difícil por la autenticación
-  throw new Error("Facebook scraping requires login - use mock data");
-}
-
-async function scrapeTwitter(url: string): Promise<ScrapedComment[]> {
-  // Twitter/X es muy restrictivo ahora
-  throw new Error("Twitter scraping blocked - use mock data");
-}
-
+/**
+ * Genera comentarios simulados para testing o fallback
+ */
 function generateMockComments(): ScrapedComment[] {
   const mockTexts = [
     "¡Excelente post! 👏",

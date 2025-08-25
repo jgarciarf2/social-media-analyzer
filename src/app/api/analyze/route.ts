@@ -61,12 +61,16 @@ export async function POST(request: NextRequest) {
       comments = generateRealisticComments(url);
     }
 
+    // Log de los comentarios que se enviarán a Gemini
+    console.log("📝 Comentarios enviados a Gemini:", comments);
+
     // Prompt para Gemini AI
     const prompt = `
     Analiza los siguientes comentarios de redes sociales y clasifícalos por sentimiento.
     Proporciona un análisis estadístico y un resumen.
 
     Comentarios:
+
     ${comments.join("\n")}
 
     Por favor responde en formato JSON con esta estructura exacta:
